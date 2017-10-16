@@ -1,0 +1,15 @@
+viewer.py unique "features" list:
+
+- Sometimes data isn't being returned for certain images. This can be seen in loaded_hdu (currently line 908) where a check happens: if isinstance(hdu, ApplyResult)..., which signifies that the hdu returned is still an ApplyResult object, which is part of Multiprocessing. The expected instance should be an HDU. A type error is raised, and the candidate set gets skipped. The error happens consistently and only on certain images. 
+
+-MEF images still don't get mosaiced together. Currently the program just selects the largest HDU and displays it. Somehow this is causing the image to get displayed slightly off centre. Usually the program automatically pans the photo to be centred with the reference image (which is just the first loaded image), but most MEF files end up slightly off centre and it's tougher to blink through the candidates since the backgrounds don't line up perfectly.
+
+- The lookup() method doesn't return to the server to update its directory file list. Once the QRUNID is set, the program will go to VOSpace and create a list of all files/folders present in the QRUN's directory. lookup() then iterates over that list to determine which healpix is to be examined next. In the case where two systems are running the application simultaneously, one instance of the application might create a new directory, and the other instance would not be aware of its existence. This may or may not have adverse effects. It could result in certain files within the rejected.ast directory being overwritten (which wouldn't actually change anything). In the case where one person accepts a file and the other rejects, the .ast files will be written to both its accepted and rejected directories. This could be problematic when trying to go back and look at the set, since it will be marked as rejected and therefore skipped over. In order to view the set, the user will have to provide a manual override or paste the .ast lines into the .ast line text field.
+
+- The .ast line paste field only retrieves 1-2 images from the set, not the entire candidate set.
+
+- Certain overloads can occur where the entire program freezes up for a lengthy amount of time (~1 minute or so) and cannot be unfrozen by obsessive mouse movements and clicking. Multiprocessing might be getting too stressed causing the freezing.
+
+- Ginga itself is lacking some features, such as the set_length function for text input fields. The set_length function is still being used as future deployments of Ginga will implement the functions correctly (as per open-source contributions from one frustrated intern).
+
+- The previous set button has zero functionality (unless creating an error counts as functionality). It relies on keys being in their dictionaries, but the method clear_candidate_images removes all used keys from their dictionaries. Since the previous button cannot find the keys, an error is thrown and the next set is loaded (getting you nowhere). Either the deletes should not occur, or the images need to get downloaded again.

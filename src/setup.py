@@ -14,7 +14,7 @@ dependencies = ['requests >= 2.7',
 
 
 if sys.version_info[0] > 2:
-    print 'The MOP package is only compatible with Python version 2.7+, not yet with 3.x'
+    print('The MOP package is only compatible with Python version 2.7+, not yet with 3.x')
     sys.exit(-1)
 
 console_scripts = ['daomop_populate = daomop.populate:main',

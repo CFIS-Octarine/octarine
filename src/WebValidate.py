@@ -1,7 +1,9 @@
 """Validation application. Runs locally at http://localhost:9909/app"""
 import sys
 import daomop.viewer
-
+import daomop.candidate
+import daomop.storage
+import daomop.downloader
 
 if __name__ == "__main__":
 
@@ -37,5 +39,7 @@ if __name__ == "__main__":
     if options.debug:
         import pdb
         pdb.run('daomop.viewer.main(options)')
+
+    print "WebValidate set to run at: http://{}:{}/app".format(options.host, options.port)
 
     daomop.viewer.main(options)

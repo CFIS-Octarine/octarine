@@ -1,5 +1,6 @@
 """Mark the stationary sources in a given source catalog by matching with other source catalogs"""
 import sys
+import os
 from astropy.io import fits
 from astropy.coordinates import SkyCoord
 from astropy.table import vstack
@@ -35,8 +36,12 @@ def completed(pixel, expnum, version, ccd, catalog_dir):
     observation = storage.Observation(expnum)
     catalog = storage.FitsTable(observation, version=version, ccd=ccd, ext='.cat.fits')
     dataset_name = "{}{}{}".format(catalog.observation.dataset_name, catalog.version, catalog.ccd)
-    hpx_catalog = storage.HPXCatalog(pixel, catalog_dir=catalog_dir)
-    return dataset_name in hpx_catalog.table['dataset_name']
+    dest_directory = os.path.basename(catalog_dir)
+    hpx_catalog = storage.HPXCatalog(pixel, catalog_dir=catalog_dir, dest_directory=dest_directory)
+    try:
+        return dataset_name in hpx_catalog.table['dataset_name']
+    except NotFoundException:
+        return False
 
 
 def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=storage.CATALOG):
@@ -85,13 +90,14 @@ def split_to_hpx(pixel, catalog, catalog_dir=None):
     
     pix = pixel
     logging.info("merging {} into HPX catalog stored at {}".format(catalog, catalog_dir))
+    dest_directory = catalog_dir is not None and os.path.basename(catalog_dir) or "./"
     try:
-        healpix_catalog = storage.HPXCatalog(pixel=pix, catalog_dir=catalog_dir)
+        healpix_catalog = storage.HPXCatalog(pixel=pix, catalog_dir=catalog_dir, dest_directory=dest_directory)
         healpix_catalog.get()
         healpix_catalog.table = healpix_catalog.table[healpix_catalog.table['dataset_name'] != dataset_name]
         healpix_catalog.table = vstack([healpix_catalog.table, catalog.table[catalog.table['HEALPIX'] == pix]])
     except NotFoundException:
-        healpix_catalog = storage.HPXCatalog(pixel=pix)
+        healpix_catalog = storage.HPXCatalog(pixel=pix, catalog_dir=catalog_dir, dest_directory=dest_directory)
         healpix_catalog.hdulist = fits.HDUList()
         healpix_catalog.hdulist.append(catalog.hdulist[0])
         healpix_catalog.table = catalog.table[catalog.table['HEALPIX'] == pix]
@@ -115,6 +121,7 @@ def match(pixel, expnum, ccd):
                       catalog.table['Y_WORLD'],
                       unit=('degree', 'degree'))
     catalog.table['HEALPIX'] = util.skycoord_to_healpix(ra_dec)
+    catalog.table['QRUNID'] = image.header['QRUNID']
 
     npts = numpy.sum([catalog.table['MAGERR_AUTO'] < 0.002])
     if npts < 10:
@@ -147,7 +154,8 @@ def match(pixel, expnum, ccd):
     master_catalog_dirname = "catalogs/master"
     storage.mkdir("{}/{}".format(storage.DBIMAGES, master_catalog_dirname))
 
-    hpx_cat = storage.HPXCatalog(pixel=healpix, catalog_dir=master_catalog_dirname)
+    dest_directory = os.path.basename(master_catalog_dirname)
+    hpx_cat = storage.HPXCatalog(pixel=healpix, catalog_dir=master_catalog_dirname, dest_directory=dest_directory)
     hpx_cat_len = 0
 
     try:
@@ -156,7 +164,9 @@ def match(pixel, expnum, ccd):
                               hpx_cat.table['Y_WORLD']))
         idx1, idx2 = util.match_lists(p1, p2, tolerance=0.5 / 3600.0)
         catalog.table['HPXID'][idx2.data[~idx2.mask]] = hpx_cat.table['HPXID'][~idx2.mask]
-        hpx_cat_len = len(hpx_cat.table)
+        hpx_cat_len = hpx_cat.table['HPXID'].max()
+        logging.info("Maximum HPXID in master catalog {} : {}".format(hpx_cat.filename, hpx_cat_len))
+        logging.info("Matched {} sources in master".format((~idx2.mask).sum()))
     except NotFoundException:
         logging.warning("Load of {} failed  at start.".format(hpx_cat.uri))
         pass
@@ -167,8 +177,8 @@ def match(pixel, expnum, ccd):
     catalog.table['HPXID'][cond] = hpx_cat_len + numpy.arange(cond.sum())
     catalog.table['MATCHES'] = 0
     catalog.table['OVERLAPS'] = 0
-    # Now append these new source (cond) to the end of the master catalog.
     split_to_hpx(pixel, catalog, catalog_dir=master_catalog_dirname)
+    logging.info("Now Maximum HPXID is {}".format(catalog.table['HPXID'].max()))
 
     for match_set in match_list:
         logging.info("trying to match against catalog {}p{:02d}.cat.fits".format(match_set[0], match_set[1]))
@@ -204,6 +214,9 @@ def match(pixel, expnum, ccd):
             pass
         except DependencyError as ex:
             logging.error(str(ex))
+
+    # Now append to the end of the master catalog.
+    split_to_hpx(pixel, catalog, catalog_dir=master_catalog_dirname)
 
     return catalog
 
@@ -245,9 +258,10 @@ def main():
     version = 'p'
 
     exit_code = 0
-    overlaps = storage.MyPolygon.from_healpix(args.healpix).cone_search(runids=storage.RUNIDS,
-                                                                        start_date=qrunid_start_date(args.qrunid),
-                                                                        end_date=qrunid_end_date(args.qrunid))
+    overlaps = storage.MyPolygon.from_healpix(args.healpix).cone_search(runids=storage.RUNIDS, start_date=None,
+                                                                        end_date=None)
+                                                                        # start_date=qrunid_start_date(args.qrunid),
+                                                                        # end_date=qrunid_end_date(args.qrunid))
     catalog_dirname = "{}/{}".format(args.catalogs, args.qrunid)
     for overlap in overlaps:
         expnum = overlap[0]

@@ -50,7 +50,7 @@ IMAGE_EXT = '.fits.fz'
 TEXT_EXT = ".txt"
 PROCESSED_VERSION = 'p'
 RAW_VERSION = 'o'
-RUNIDS = ['%P30', '%P31']
+RUNIDS = ['%P30', '%P31', '%P99']
 DBIMAGES = 'vos:cfis/solar_system/dbimages'
 CATALOG = 'catalogs'
 PITCAIRN = 'vos:cfis/pitcairn'
@@ -270,7 +270,7 @@ class MyPolygon(Polygon.Polygon):
                         logging.debug("{} {} OVERLAPS ".format(observationID, headers.ccd))
                         overlaps.append([observationID, headers.ccd])
             except Exception as ex:
-                logging.debug("ERROR processing {}: {}".format(observationID, ex))
+                logging.error("ERROR processing {}: {}".format(observationID, ex))
                 continue
         logging.debug("Found these overlapping CCDs\n" + str(overlaps))
         return overlaps
@@ -302,7 +302,7 @@ class Observation(object):
 class Artifact(object):
 
     def __init__(self, observation, version=PROCESSED_VERSION,
-                 ccd=None, subdir=None, ext=IMAGE_EXT, prefix=None):
+                 ccd=None, subdir=None, ext=IMAGE_EXT, prefix=None, dest_directory=None):
         """
         :type version: str
         :type observation: Observation
@@ -314,6 +314,8 @@ class Artifact(object):
         """
         self.observation = observation
         self.ccd = ccd
+        self._dest_directory = None
+        self.dest_directory = dest_directory
         self._subdir = subdir
         self._ext = ext
         self._version = version
@@ -389,7 +391,20 @@ class Artifact(object):
 
     @property
     def filename(self):
-        return os.path.basename(self.uri)
+        if not os.path.exists(self.dest_directory):
+            os.mkdir(self.dest_directory)
+        return os.path.join(self.dest_directory, os.path.basename(self.uri))
+
+    @property
+    def dest_directory(self):
+        return self._dest_directory
+
+    @dest_directory.setter
+    def dest_directory(self, value):
+        if value is not None:
+            self._dest_directory = value
+        else:
+            self._dest_directory = os.getcwd()
 
     def put(self):
         """Put the artifact to VOSpace."""
@@ -693,28 +708,29 @@ class FitsImage(FitsArtifact):
                 cutout = "[{}:{},{}:{}]".format(cutout[1], cutout[2], cutout[3], cutout[4])
             except:
                 break
-            hdu.header['DATASEC'] = reset_datasec(cutout,
-                                                  hdu.header['DATASEC'],
-                                                  hdu.header['NAXIS1'],
-                                                  hdu.header['NAXIS2'])
-            if trim_to_datasec:
-                datasec = hdu.header['DATASEC'][1:-1].replace(':', ',').split(',')
-                d = map(int, datasec)
-                hdu.data = hdu.data[d[2] - 1:d[3], d[0] - 1:d[1]]
-                hdu.header['CRPIX1'] = hdu.header.get('CRPIX1', 0) - (d[0] - 1)
-                hdu.header['CRPIX2'] = hdu.header.get('CRPIX2', 0) - (d[0] - 1)
+            if 'DATASEC' in hdu.header:
+                hdu.header['DATASEC'] = reset_datasec(cutout,
+                                                      hdu.header['DATASEC'],
+                                                      hdu.header['NAXIS1'],
+                                                      hdu.header['NAXIS2'])
+                if trim_to_datasec:
+                    datasec = hdu.header['DATASEC'][1:-1].replace(':', ',').split(',')
+                    d = map(int, datasec)
+                    hdu.data = hdu.data[d[2] - 1:d[3], d[0] - 1:d[1]]
+                    hdu.header['CRPIX1'] = hdu.header.get('CRPIX1', 0) - (d[0] - 1)
+                    hdu.header['CRPIX2'] = hdu.header.get('CRPIX2', 0) - (d[2] - 1)
 
         if not hdu_list:
             raise OSError(errno.EFAULT, "Failed to retrieve cutout of image", self.uri)
 
         # transform PV keywords to SIP in non-empty hdu.
         for hdu in hdu_list:
-            if hdu.header["NAXIS"] == 0 and "NORDFIT" not in hdu.header:
+            if hdu.header["NAXIS"] == 0 or "NORDFIT" not in hdu.header:
                 continue
             try:
                 pv_to_sip(hdu.header)
             except LinAlgError as lin_alg_error:
-                logging.error("PV_TO_SIP FAILED: {}".format(lin_alg_error))
+                logging.error("PV_TO_SIP error: {} ({})".format(lin_alg_error, self.filename))
 
         if self.ccd is None:
             # build a list of CCD headers as we didn't do a CCD based cutout so need an MEF of headers.
