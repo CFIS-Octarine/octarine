@@ -35,8 +35,9 @@ def create_build_cat_command(command):
     with open(command, 'w') as fout:
         fout.write("#!/bin/bash -i\n")
         fout.write("export HOME=`cd ~ ; pwd`\n")
+        fout.write("source ${HOME}/.bashrc\n")
         fout.write("source activate ossos\n")
-        fout.write("getCert\n")
+        fout.write("cp cadcproxy.pem ${HOME}/.ssl/\n")
         fout.write("""echo "Processing ",$1\n""")
         fout.write("""daomop_populate $1 --verbose\n""")
         fout.write("""daomop_cat $1 --verbose\n""")
@@ -90,10 +91,11 @@ def create_stationary_command(command_filename="stationary.sh"):
     with open(command_filename, 'w') as fout:
         fout.write("""#!/bin/bash -i\n""")
         fout.write("""export HOME=`cd ~ ; pwd`\n""")
+        fout.write("""source ${HOME}/.bashrc\n""")
         fout.write("""source activate ossos\n\n""")
-        fout.write("""getCert\n""")
-        fout.write("""echo "Building Catalog ",$1\n""")
-        fout.write("""daomop_stationary $1 --verbose """)
+        fout.write("""cp cadcproxy.pem ${HOME}/.ssl/\n""")
+        fout.write("""echo "Building Catalog ",$1 $2\n""")
+        fout.write("""daomop_stationary $1 $2 --verbose """)
 
     os.chmod(command_filename, stat.S_IXGRP | stat.S_IRWXU | stat.S_IXOTH | stat.S_IROTH | stat.S_IRGRP)
     return command_filename
@@ -116,10 +118,11 @@ def create_stationary_job(qrunid, force=False, job_filename="stationary_job.in",
         fout.write("""when_to_transfer_output = ON_EXIT_OR_EVICT\n""")
         fout.write("""RunAsOwner = True\n""")
         fout.write("""transfer_output_files = /dev/null\n""")
-        fout.write("""\nExecutable = {}""".format(command_filename))
+        fout.write("""\nExecutable = {}\n""".format(command_filename))
 
         force = force and "--force" or ""
-        for healpix in storage.list_healpix():
+        for healpix in storage.list_healpix(start_date=qrunid_start_date(qrunid),
+                                            end_date=qrunid_end_date(qrunid)):
             params = {"Arguments": "{} {} {}".format(healpix, qrunid, force),
                       "Log": "{}.log".format(healpix),
                       "Output": "{}.out".format(healpix),
