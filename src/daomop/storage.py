@@ -225,6 +225,25 @@ class MyPolygon(Polygon.Polygon):
     def cone_search(self, runids=None, mjdate=None, minimum_time=None,
                     start_date=None,
                     end_date=None):
+        """
+        Use the CAOM2 table to find all CFHT exposures that overlap with this polygon.
+        Arguments, when provided, add restrictions to the CFHT CAOM2 data set retrieved.
+
+        The mjdate/minimum_time setting exclude frames take within mjdate-minimum_time and mjdate+minimum_time
+
+        :param runids: only look for exposures taken for these RUNID values
+        :type runids: list
+        :param mjdate: mjdate to use as the centre of the time exclusion zone.
+        :type mjdate: float
+        :param minimum_time: half-width of the time exclusion bounds, in days.
+        :type minimum_time: float
+        :param start_date: only return exposures taken after start_date, mjdate
+        :type start_date: float
+        :param end_date: only return exposures taken before end_date, mjdate
+        :type end_date: float
+        :return: list of expnum/ccd pairs that overlap the polygon.
+        :rtype: list
+        """
 
         query = (" SELECT Observation.observationID as observationID "
                  " FROM caom2.Observation AS Observation "

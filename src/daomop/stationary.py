@@ -18,6 +18,10 @@ task = "stationary"
 dependency = "build_cat"
 
 
+MATCH_TOLERANCE = 0.5/3600.0  # maximum spatial separation between centroids for possible source cross-match.
+# TODO set MINIMUM_TIME_OFFSET based on MATCH_TOLERANCE, TNO distance cuts and observing circumstances.
+MINIMUM_TIME_OFFSET = 2/24.0  # minimum time between two exposures used in matching
+
 class DependencyError(Exception):
     pass
 
@@ -86,6 +90,18 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=sto
 
 
 def split_to_hpx(pixel, catalog, catalog_dir=None):
+    """
+    Take an individual exposure source catalog and replace all entries for that exposure in the reference HPX catalog.
+
+    Store the resulting HPX catalog back to the storage system.
+
+    :param pixel: healpix pixel of the HPX catalog to replace exposure measure in.
+    :type pixel: int
+    :param catalog: the exposure based catalog to insert into the HPX catalog.
+    :type catalog: FitsTable
+    :param catalog_dir: directory where the pixel catalog is being stored.
+    :return: None
+    """
     dataset_name = "{}{}{}".format(catalog.observation.dataset_name, catalog.version, catalog.ccd)
     
     pix = pixel
@@ -94,13 +110,17 @@ def split_to_hpx(pixel, catalog, catalog_dir=None):
     try:
         healpix_catalog = storage.HPXCatalog(pixel=pix, catalog_dir=catalog_dir, dest_directory=dest_directory)
         healpix_catalog.get()
+        # strip out the entry already in the HPX catalog that are from same exposure as given catalog
         healpix_catalog.table = healpix_catalog.table[healpix_catalog.table['dataset_name'] != dataset_name]
+        # append the entries from the given exposure catalog to the end of the HPX catalog.
         healpix_catalog.table = vstack([healpix_catalog.table, catalog.table[catalog.table['HEALPIX'] == pix]])
     except NotFoundException:
+        # since we didn't find a existing catalog here, just create a new one.
         healpix_catalog = storage.HPXCatalog(pixel=pix, catalog_dir=catalog_dir, dest_directory=dest_directory)
         healpix_catalog.hdulist = fits.HDUList()
         healpix_catalog.hdulist.append(catalog.hdulist[0])
         healpix_catalog.table = catalog.table[catalog.table['HEALPIX'] == pix]
+    # Put the catalog to the back store.
     healpix_catalog.write()
     healpix_catalog.put()
 
@@ -138,31 +158,34 @@ def match(pixel, expnum, ccd):
                                 catalog.table['FLUX_RADIUS'] > flux_radius_lim), axis=0)
 
     catalog.table = catalog.table[trim_condition]
-    match_list = image.polygon.cone_search(runids=storage.RUNIDS,
-                                           minimum_time=2.0/24.0,
-                                           mjdate=image.header.get('MJDATE', None))
 
-    # First match against the HPX catalogs (if they exist)
+    # Add an HPXID column that is empty.
+    catalog.table['HPXID'] = -1
+
+    # Set the number of matches and overlaps for all sources in this table to 0.
+    catalog.table['MATCHES'] = 0
+    catalog.table['OVERLAPS'] = 0
+
+    # Do some variable munging to get an HPX catalog from a directory that isn't QRUNID based.
+    master_catalog_dirname = "catalogs/master"
+    storage.mkdir("{}/{}".format(storage.DBIMAGES, master_catalog_dirname))
+    dest_directory = os.path.basename(master_catalog_dirname)
+    hpx_cat = storage.HPXCatalog(pixel=pixel, catalog_dir=master_catalog_dirname, dest_directory=dest_directory)
+
+    hpx_cat_len = 0
+
     # reshape the position vectors from the catalogues for use in match_lists
     p1 = numpy.transpose((catalog.table['X_WORLD'],
                           catalog.table['Y_WORLD']))
 
-    # Build the HPXID column by matching against the HPX catalogs that might exit.
-    catalog.table['HPXID'] = -1
-    healpix = pixel
-
-    master_catalog_dirname = "catalogs/master"
-    storage.mkdir("{}/{}".format(storage.DBIMAGES, master_catalog_dirname))
-
-    dest_directory = os.path.basename(master_catalog_dirname)
-    hpx_cat = storage.HPXCatalog(pixel=healpix, catalog_dir=master_catalog_dirname, dest_directory=dest_directory)
-    hpx_cat_len = 0
-
+    # First match against the HPX catalogs (if they exist)
     try:
+        # reshape the position vectors from the catalogues for use in match_lists
         hpx_cat.get()
+        # reshape the position vectors from the catalogues for use in match_lists
         p2 = numpy.transpose((hpx_cat.table['X_WORLD'],
                               hpx_cat.table['Y_WORLD']))
-        idx1, idx2 = util.match_lists(p1, p2, tolerance=0.5 / 3600.0)
+        idx1, idx2 = util.match_lists(p1, p2, tolerance=MATCH_TOLERANCE)
         catalog.table['HPXID'][idx2.data[~idx2.mask]] = hpx_cat.table['HPXID'][~idx2.mask]
         hpx_cat_len = hpx_cat.table['HPXID'].max()
         logging.info("Maximum HPXID in master catalog {} : {}".format(hpx_cat.filename, hpx_cat_len))
@@ -171,14 +194,19 @@ def match(pixel, expnum, ccd):
         logging.warning("Load of {} failed  at start.".format(hpx_cat.uri))
         pass
 
-    # for all non-matched sources in this healpix we increment the counter.
+    # for all non-matched sources in this healpix we create a new HPXID for each source.
     cond = numpy.all((catalog.table['HPXID'] < 0,
-                      catalog.table['HEALPIX'] == healpix), axis=0)
+                      catalog.table['HEALPIX'] == pixel), axis=0)
     catalog.table['HPXID'][cond] = hpx_cat_len + numpy.arange(cond.sum())
-    catalog.table['MATCHES'] = 0
-    catalog.table['OVERLAPS'] = 0
-    split_to_hpx(pixel, catalog, catalog_dir=master_catalog_dirname)
     logging.info("Now Maximum HPXID is {}".format(catalog.table['HPXID'].max()))
+
+    split_to_hpx(pixel, catalog, catalog_dir=master_catalog_dirname)
+
+    # get a list of exposures that overlaps image polygon but more than 2 hours before or after.
+    # TODO make this time offset elongation and source distance dependent.
+    match_list = image.polygon.cone_search(runids=storage.RUNIDS,
+                                           minimum_time=MINIMUM_TIME_OFFSET,
+                                           mjdate=image.header.get('MJDATE', None))
 
     for match_set in match_list:
         logging.info("trying to match against catalog {}p{:02d}.cat.fits".format(match_set[0], match_set[1]))
@@ -205,7 +233,7 @@ def match(pixel, expnum, ccd):
             # reshape the position vectors from the catalogues for use in match_lists
             p2 = numpy.transpose((match_catalog.table['X_WORLD'],
                                   match_catalog.table['Y_WORLD']))
-            idx1, idx2 = util.match_lists(p1, p2, tolerance=0.5/3600.0)
+            idx1, idx2 = util.match_lists(p1, p2, tolerance=MATCH_TOLERANCE)
             catalog.table['MATCHES'][idx2.data[~idx2.mask]] += 1
             catalog.table['OVERLAPS'] += \
                 [match_image.polygon.isInside(row['X_WORLD'], row['Y_WORLD']) for row in catalog.table]
@@ -258,10 +286,9 @@ def main():
     version = 'p'
 
     exit_code = 0
-    overlaps = storage.MyPolygon.from_healpix(args.healpix).cone_search(runids=storage.RUNIDS, start_date=None,
-                                                                        end_date=None)
-                                                                        # start_date=qrunid_start_date(args.qrunid),
-                                                                        # end_date=qrunid_end_date(args.qrunid))
+    overlaps = storage.MyPolygon.from_healpix(args.healpix).cone_search(runids=storage.RUNIDS,
+                                                                        start_date=qrunid_start_date(args.qrunid),
+                                                                        end_date=qrunid_end_date(args.qrunid))
     catalog_dirname = "{}/{}".format(args.catalogs, args.qrunid)
     for overlap in overlaps:
         expnum = overlap[0]
