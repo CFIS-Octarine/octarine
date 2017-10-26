@@ -164,7 +164,9 @@ class Task(object):
 
 def get_cfis_exposure_table(start_date=None, end_date=None):
 
-    query = """SELECT Observation.observationID AS "observationID" """
+    query = """SELECT Observation.observationID AS "observationID", """
+    query += """ COORD1(CENTROID(Plane.position_bounds)) AS RA, """
+    query += """ COORD2(CENTROID(Plane.position_bounds)) AS DE """
     query += """FROM caom2.Plane AS Plane JOIN caom2.Observation AS Observation ON Plane.obsID = Observation.obsID """
     query += """WHERE   Plane.calibrationLevel = '1' AND Plane.energy_bandpassName IN ( 'r.MP9602','r.MP9601' ) """
     query += """AND Observation.instrument_name = 'MegaPrime' """
@@ -1418,8 +1420,9 @@ def list_exposures(proposal_title='cfis'):
     return tap_query(query)
 
 
-def list_healpix():
-    exposure_table = list_exposures()
+def list_healpix(start_date=None, end_date=None):
+
+    exposure_table = get_cfis_exposure_table(start_date=start_date, end_date=end_date)
     skycoords = SkyCoord(exposure_table['RA']*units.degree,
                          exposure_table['DE']*units.degree)
     healpix = []
