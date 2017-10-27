@@ -432,7 +432,7 @@ class Artifact(object):
         # first ensure the path exists
         logging.debug("Checking that path {} exists".format(self.uri))
         make_path(self.uri)
-        logging.debug("Copying {} to {}".format(self.filename, self.uri))
+        logging.info("Copying {} to {}".format(self.filename, self.uri))
         return copy(self.filename, self.uri)
 
     def delete(self):
