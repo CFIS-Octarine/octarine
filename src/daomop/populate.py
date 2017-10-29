@@ -42,10 +42,10 @@ def run(dataset_name):
     # Source is either PITCAIRN processing or CFHT archive URL
     source = pitcairn_uri(dataset_name)
     if not isfile(source):
-        # Try pitcairn wihtout the .fz
+        # Try pitcairn without the .fz
         source = pitcairn_uri(dataset_name, ext=".fits")
     if not isfile(source):
-        raise OSError(errno.EEXIST,"No file in pitcairn to link to for {}".format(source), dataset_name)
+        raise OSError(errno.EEXIST, "No file in pitcairn to link to for {}".format(source), dataset_name)
 
     make_link(source, artifact.uri)
 
@@ -54,7 +54,7 @@ def run(dataset_name):
     source = archive_url(dataset_name, version, ext='.head', archive='CFHTSG')
     header = Header(observation, version=version)
     if not isfile(source):
-        raise OSError(errno.EEXIST,"No header to link to for {}".format(source), dataset_name)
+        raise OSError(errno.EEXIST, "No header to link to for {}".format(source), dataset_name)
 
     make_link(source, header.uri)
 
