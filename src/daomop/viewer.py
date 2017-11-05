@@ -8,7 +8,7 @@ from multiprocessing.pool import ApplyResult
 from astropy.time import Time
 from cadcutils.exceptions import NotFoundException
 from mp_ephem import ObsRecord
-
+import tempfile
 from . import candidate
 from . import downloader
 from . import storage
@@ -17,7 +17,6 @@ from ginga.web.pgw import ipg, Widgets, Viewers
 from ginga.misc import log
 from astropy.wcs import WCS
 
-logging.basicConfig(level=logging.INFO, format="%(module)s.%(funcName)s:%(lineno)s %(message)s")
 DISPLAY_KEYWORDS = ['EXPNUM', 'DATE-OBS', 'UTC-OBS', 'EXPTIME', 'FILTER']
 LEGEND = 'Keyboard Shortcuts: \n' \
          'f: image backwards \n' \
@@ -70,6 +69,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
 
         self.logger = logger
         console_handler = logging.StreamHandler(stream=ConsoleBoxStream(self.console_box))
+        console_handler.formatter = logging.Formatter(fmt="%(message)s")
         self.logger.addHandler(console_handler)
         self.top = window
 
@@ -259,9 +259,11 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 self.logger.info('Loading next candidate set failed.')
                 if isinstance(ex, StopIteration):
                     self.logger.info('StopIteration error: End of candidate set.')
-                    self.logger.info('Hit "Load" button to move onto the next set.')
-                    self.previous_set.set_enabled(True)
-                    self.load_json.set_enabled(True)
+                    self.load_candidates()
+
+                    # self.logger.info('Hit "Load" button to move onto the next set.')
+                    # self.previous_set.set_enabled(True)
+                    # self.load_json.set_enabled(True)
 
     def ast_exists(self):
         """
@@ -307,7 +309,10 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self.buttons_off()
         if self.candidates is not None:
             self.write_record(rejected=rejected)
-            self.next()
+            try:
+                self.next()
+            except StopIteration:
+                pass
 
     def set_qrun_id(self, qrun_id):
         """
@@ -376,7 +381,7 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 if obs_record is not None:
                     self.candidate.append(obs_record)
             except:
-                logging.warning("Failed to parse line >{}<".format(line))
+                self.logger.warning("Failed to parse line >{}<".format(line))
                 return
         self.logger.info("Accepted AST file.")
         self.candidates = [self.candidate]
@@ -441,23 +446,28 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 if offset > storage.CUTOUT_RADIUS and previous_offset > storage.CUTOUT_RADIUS:
                     # Insert a blank image in the list
                     previous_key = self.downloader.image_key(previous_record)
-                    comparison = storage.get_comparison_image(previous_record.coordinate,
-                                                              previous_record.date.mjd)
-                    frame = "{}{}".format(comparison[0]['observationID'], 'p00')
-                    comparison_obs_record = ObsRecord(null_observation=True,
-                                                      provisional_name=previous_record.provisional_name,
-                                                      date=Time(comparison[0]['mjdate'], format='mjd',
-                                                                precision=5).mpc,
-                                                      ra=previous_record.coordinate.ra.degree,
-                                                      dec=previous_record.coordinate.dec.degree,
-                                                      frame=frame,
-                                                      comment=previous_key)
-                    key = self.downloader.image_key(comparison_obs_record)
-                    self.null_observation[key] = comparison_obs_record
-                    self.comparison_images[previous_key] = key
-                    if key not in self.image_list:
-                        self.image_list[key] = self.pool.apply_async(self.downloader.get,
-                                                                     (comparison_obs_record,))
+                    try:
+                        comparison = storage.get_comparison_image(previous_record.coordinate,
+                                                                  previous_record.date.mjd,
+                                                                  radius=120/3600.)
+                        frame = "{}{}".format(comparison[0]['observationID'], previous_record.comment.frame)
+                        comparison_obs_record = ObsRecord(null_observation=True,
+                                                          provisional_name=previous_record.provisional_name,
+                                                          date=Time(comparison[0]['mjdate'], format='mjd',
+                                                                    precision=5).mpc,
+                                                          ra=previous_record.coordinate.ra.degree,
+                                                          dec=previous_record.coordinate.dec.degree,
+                                                          frame=frame,
+                                                          comment=previous_key)
+                        key = self.downloader.image_key(comparison_obs_record)
+                        self.null_observation[key] = comparison_obs_record
+                        self.comparison_images[previous_key] = key
+                        if key not in self.image_list:
+                            self.image_list[key] = self.pool.apply_async(self.downloader.get,
+                                                                         (comparison_obs_record,))
+                    except Exception as ex:
+                        self.logger.error("Failed to get comparison image.: {}".format(str(ex)))
+                        return
 
             previous_record = obs_record
             previous_offset = offset
@@ -465,7 +475,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
         if previous_offset > storage.CUTOUT_RADIUS and previous_record is not None:
             previous_key = self.downloader.image_key(previous_record)
             comparison = storage.get_comparison_image(previous_record.coordinate,
-                                                      previous_record.date.mjd)
+                                                      previous_record.date.mjd,
+                                                      radius=120/3600.0)
             frame = "{}{}".format(comparison[0]['observationID'], 'p00')
             comparison_obs_record = ObsRecord(null_observation=True,
                                               provisional_name=previous_record.provisional_name,
@@ -560,8 +571,6 @@ class ValidateGui(ipg.EnhancedCanvasView):
         self._center = None
         self.obs_number = obs_number
         self._load()
-        self._center = WCS(self.header).all_pix2world(self.get_data_size()[0] / 2,
-                                                      self.get_data_size()[1] / 2, 0)
 
     def _load(self):
         """
@@ -613,6 +622,8 @@ class ValidateGui(ipg.EnhancedCanvasView):
                                  .format(self.candidate[0].provisional_name))
                 self.next()
                 break
+        self._center = WCS(self.header).all_pix2world(self.get_data_size()[0] / 2,
+                                                      self.get_data_size()[1] / 2, 0)
 
     def mark_aperture(self):
         """
@@ -815,6 +826,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
                                                                                             keyname,
                                                                                             opn,
                                                                                             viewer))
+        if self.candidate is None:
+            self.next()
+            return
         # Only step back if we aren't looking at a comparison images (as determined by the next_image keyword)
         if keyname == 'f':
             if self.next_image is not None:
@@ -835,8 +849,9 @@ class ValidateGui(ipg.EnhancedCanvasView):
                 self.obs_number += 1
 
         self.zoom = self.get_zoom()
-        self.obs_number %= len(self.candidate)
-        self._load()
+        if self.candidate is not None:
+            self.obs_number %= len(self.candidate)
+            self._load()
 
     def clear_candidate_images(self):
         """
@@ -945,6 +960,9 @@ def main(params):
 
     ginga_logger = log.get_logger("ginga", options=params)
 
+    ginga_logger.addHandler(logging.FileHandler(filename=tempfile.NamedTemporaryFile(prefix='ginga',
+                                                                                     delete=False).name))
+
     if params.use_opencv:
         from ginga import trcalc
         try:
@@ -964,8 +982,13 @@ def main(params):
     #  create top level window
     window = app.make_window("Validate", wid='Validate')
 
+    daomop_logger = logging.getLogger('daomop')
+
+    if hasattr(params, 'loglevel'):
+        daomop_logger.setLevel(params.loglevel)
+
     # our own viewer object, customized with methods (see above)
-    ValidateGui(logging.getLogger('daomop'), window)
+    ValidateGui(daomop_logger, window)
 
     try:
         app.start()

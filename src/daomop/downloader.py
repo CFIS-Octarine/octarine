@@ -1,6 +1,7 @@
 import logging
 import storage
 from multiprocessing import Lock
+from astropy.io import fits
 
 
 class Downloader(object):
@@ -65,6 +66,9 @@ class Downloader(object):
         except Exception as ex:
             logging.debug(ex)
             raise ex
+
+        if not isinstance(hdu_list, fits.HDUList):
+            return None
 
         logging.debug("Got {}".format(self.image_key(obs_record)))
         return hdu_list

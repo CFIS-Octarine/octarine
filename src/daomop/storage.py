@@ -9,6 +9,7 @@ import tempfile
 import Polygon
 import numpy
 import requests
+import time
 from astropy.coordinates import SkyCoord
 from astropy import units
 from astropy.table import Table
@@ -183,9 +184,17 @@ def get_cfis_exposure_table(start_date=None, end_date=None):
     return tap_query(query)
 
 
-def get_comparison_image(coordinate, mjdate, minimum_time=None):
+def get_comparison_image(coordinate, mjdate, minimum_time=None, radius=None):
     if minimum_time is None:
         minimum_time = 20/60.0/24.0
+
+    if radius is None:
+        geometry = "POINT('ICRS', {}, {})".format(coordinate.ra.degree,
+                                                  coordinate.dec.degree)
+    else:
+        geometry = "CIRCLE('ICRS', {}, {}, {})".format(coordinate.ra.degree,
+                                                       coordinate.dec.degree,
+                                                       radius)
 
     query = """SELECT Observation.observationID AS "observationID", Plane.time_bounds_lower as "mjdate" """
     query += """FROM caom2.Plane AS Plane JOIN caom2.Observation AS Observation ON Plane.obsID = Observation.obsID """
@@ -194,9 +203,7 @@ def get_comparison_image(coordinate, mjdate, minimum_time=None):
     query += """AND Observation.collection = 'CFHT' """
     query += """AND lower(Observation.proposal_title) LIKE '%cfis%' """
     query += """AND  ( Plane.quality_flag IS NULL OR Plane.quality_flag != 'junk' ) """
-
-    query += """AND CONTAINS(POINT('ICRS',{},{}), Plane.position_bounds)=1 """.format(coordinate.ra.degree,
-                                                                                      coordinate.dec.degree)
+    query += """AND CONTAINS({}, Plane.position_bounds)=1 """.format(geometry)
     query += """AND ( Plane.time_bounds_lower < {} """.format(mjdate - minimum_time)
     query += """ OR  Plane.time_bounds_upper > {} ) """.format(mjdate + minimum_time)
 
@@ -711,6 +718,7 @@ class FitsImage(FitsArtifact):
         except BadRequestException as bre:
             if "No matching data" in str(bre):
                 logging.error(str(bre))
+                logging.error(str(self.uri+cutout))
                 return []
             raise bre
         except NotFoundException:

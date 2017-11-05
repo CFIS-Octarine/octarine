@@ -4,6 +4,7 @@ import daomop.viewer
 import daomop.candidate
 import daomop.storage
 import daomop.downloader
+import logging
 
 
 def main():
@@ -19,7 +20,7 @@ def main():
     optprs.add_option("--log", dest="logfile", metavar="FILE",
                       help="Write logging output to FILE")
     optprs.add_option("--loglevel", dest="loglevel", metavar="LEVEL",
-                      type='int', default=daomop.viewer.logging.INFO,
+                      type='int', default=logging.ERROR,
                       help="Set logging level to LEVEL")
     optprs.add_option("--port", dest="port", metavar="PORT",
                       type=int, default=9909,
