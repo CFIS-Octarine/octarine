@@ -48,7 +48,7 @@ def completed(pixel, expnum, version, ccd, catalog_dir):
         return False
 
 
-def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=storage.CATALOG):
+def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=storage.CATALOG, runids=storage.RUNIDS):
     """
     Retrieve the catalog from VOSspace, find the matching dataset_name/ccd combos and match against those.
 
@@ -73,7 +73,7 @@ def run(pixel, expnum, ccd, prefix, version, dry_run, force, catalog_dirname=sto
             logging.info("Getting fits image from VOSpace")
 
             logging.info("Running match on %s %d" % (expnum, ccd))
-            catalog = match(pixel, expnum, ccd)
+            catalog = match(pixel, expnum, ccd, runids=runids)
             storage.mkdir("{}/{}".format(storage.DBIMAGES, catalog_dirname))
             split_to_hpx(pixel, catalog, catalog_dir=catalog_dirname)
 
@@ -125,7 +125,7 @@ def split_to_hpx(pixel, catalog, catalog_dir=None):
     healpix_catalog.put()
 
 
-def match(pixel, expnum, ccd):
+def match(pixel, expnum, ccd, runids=storage.RUNIDS):
 
     observation = storage.Observation(expnum)
 
@@ -204,7 +204,7 @@ def match(pixel, expnum, ccd):
 
     # get a list of exposures that overlaps image polygon but more than 2 hours before or after.
     # TODO make this time offset elongation and source distance dependent.
-    match_list = image.polygon.cone_search(runids=storage.RUNIDS,
+    match_list = image.polygon.cone_search(runids=runids,
                                            minimum_time=MINIMUM_TIME_OFFSET,
                                            mjdate=image.header.get('MJDATE', None))
 
@@ -274,6 +274,7 @@ def main():
     parser.add_argument("--debug", "-d",
                         action="store_true")
     parser.add_argument("qrunid", help="The CFHT QRUN to build stationary catalogs for.")
+    parser.add_argument("--runids", nargs="*", default=storage.RUNIDS)
 
     cmd_line = " ".join(sys.argv)
     args = parser.parse_args()
@@ -286,14 +287,14 @@ def main():
     version = 'p'
 
     exit_code = 0
-    overlaps = storage.MyPolygon.from_healpix(args.healpix).cone_search(runids=storage.RUNIDS,
+    overlaps = storage.MyPolygon.from_healpix(args.healpix).cone_search(runids=args.runids,
                                                                         start_date=qrunid_start_date(args.qrunid),
                                                                         end_date=qrunid_end_date(args.qrunid))
     catalog_dirname = "{}/{}".format(args.catalogs, args.qrunid)
     for overlap in overlaps:
         expnum = overlap[0]
         ccd = overlap[1]
-        run(args.healpix, expnum, ccd, prefix, version, args.dry_run, args.force, catalog_dirname)
+        run(args.healpix, expnum, ccd, prefix, version, args.dry_run, args.force, catalog_dirname, runids=args.runids)
     return exit_code
 
 

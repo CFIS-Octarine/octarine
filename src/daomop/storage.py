@@ -163,7 +163,7 @@ class Task(object):
             return self.dependency.finished
 
 
-def get_cfis_exposure_table(start_date=None, end_date=None):
+def get_exposure_table(start_date=None, end_date=None, runids=['17BC99']):
 
     query = """SELECT Observation.observationID AS "observationID", """
     query += """ COORD1(CENTROID(Plane.position_bounds)) AS RA, """
@@ -172,8 +172,9 @@ def get_cfis_exposure_table(start_date=None, end_date=None):
     query += """WHERE   Plane.calibrationLevel = '1' AND Plane.energy_bandpassName IN ( 'r.MP9602','r.MP9601' ) """
     query += """AND Observation.instrument_name = 'MegaPrime' """
     query += """AND Observation.collection = 'CFHT' """
-    query += """AND lower(Observation.proposal_title) LIKE '%cfis%' """
+    query += """AND Observation.proposal_id IN ({})""".format(",".join([ "'{}'".format(x) for x in runids]))
     query += """AND  ( Plane.quality_flag IS NULL OR Plane.quality_flag != 'junk' ) """
+    print query
 
     if start_date is not None:
         query += " AND Plane.time_bounds_lower > {} ".format(start_date)
@@ -1428,9 +1429,10 @@ def list_exposures(proposal_title='cfis'):
     return tap_query(query)
 
 
-def list_healpix(start_date=None, end_date=None):
+def list_healpix(start_date=None, end_date=None, runids=['17BC99']):
 
-    exposure_table = get_cfis_exposure_table(start_date=start_date, end_date=end_date)
+    exposure_table = get_exposure_table(start_date=start_date, end_date=end_date, runids=runids)
+    print exposure_table
     skycoords = SkyCoord(exposure_table['RA']*units.degree,
                          exposure_table['DE']*units.degree)
     healpix = []

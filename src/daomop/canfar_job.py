@@ -101,7 +101,7 @@ def create_stationary_command(command_filename="stationary.sh"):
     return command_filename
 
 
-def create_stationary_job(qrunid, force=False, job_filename="stationary_job.in", command_filename="stationary.sh"):
+def create_stationary_job(qrunid, force=False, job_filename="stationary_job.in", command_filename="stationary.sh", runids=['17BC99']):
     """Build the stationary catalog builder job submission script.
 
     :param qrunid: Which qrunid should this stationary catalog be for
@@ -122,7 +122,7 @@ def create_stationary_job(qrunid, force=False, job_filename="stationary_job.in",
 
         force = force and "--force" or ""
         for healpix in storage.list_healpix(start_date=qrunid_start_date(qrunid),
-                                            end_date=qrunid_end_date(qrunid)):
+                                            end_date=qrunid_end_date(qrunid), runids=runids):
             params = {"Arguments": "{} {} {}".format(healpix, qrunid, force),
                       "Log": "{}.log".format(healpix),
                       "Output": "{}.out".format(healpix),
@@ -141,12 +141,13 @@ def main():
     parser = argparse.ArgumentParser(description="Build the job and input files needed to launch a canfar job.")
     parser.add_argument("command", choices=['stationary', 'build_cat'], help="Which command to build job for")
     parser.add_argument("qrunid", help="which CFHT Queue run is this job for.", action="store", default="%")
+    parser.add_argument("runids", nargs='*', help="which CFHT Queue run is this job for.", action="store", default="%")
     parser.add_argument("--force", help="Force job to run on previously processed images.", action='store_true',
                         default=False)
 
     args = parser.parse_args()
     if args.command == "stationary":
-        return create_stationary_job(args.qrunid, force=args.force)
+        return create_stationary_job(args.qrunid, force=args.force, runids=args.runids)
     elif args.command == "build_cat":
         return create_build_cat(args.qrunid, force=args.force)
 
