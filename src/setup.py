@@ -18,6 +18,7 @@ if sys.version_info[0] > 2:
     sys.exit(-1)
 
 console_scripts = ['daomop_populate = daomop.populate:main',
+                   'daomop_link = daomop.CFIS_Link_stacked:main',
                    'daomop_validate = daomop.web_validate:main',
                    'daomop_stationary = daomop.stationary:main',
                    'daomop_cat = daomop.build_cat:main',
