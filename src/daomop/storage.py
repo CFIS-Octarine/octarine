@@ -497,9 +497,12 @@ class FitsArtifact(Artifact):
     def hdulist(self):
         if self._hdulist is not None:
             return self._hdulist
-        if not os.access(self.filename, os.R_OK):
-            self.get()
-        self._hdulist = fits.open(self.filename)
+        try:
+            if not os.access(self.filename, os.R_OK):
+                self.get()
+            self._hdulist = fits.open(self.filename)
+        except:
+            self._hdulist = fits.HDUList()
         return self._hdulist
 
     @hdulist.setter
@@ -537,7 +540,7 @@ class FitsTable(FitsArtifact):
         if self.table.meta['EXTNAME'] in self.hdulist:
             del(self.hdulist[self.table.meta['EXTNAME']])
         self.hdulist.append(fits.table_to_hdu(self.table))
-        self.hdulist.writeto(self.filename, clobber=True)
+        self.hdulist.writeto(self.filename, overwrite=True)
 
 
 class FitsImage(FitsArtifact):
@@ -866,8 +869,16 @@ class FitsImage(FitsArtifact):
 class HPXCatalog(FitsTable):
 
     def __init__(self, pixel, nside=None, catalog_dir=None, **kwargs):
+        """
+
+        :param pixel: healpix to retrieve a catalog of
+        :param nside: nsides to use in computing RA/DEC healpix translation
+        :param catalog_dir: dbimages sub-directory containting the catalogs
+        :param kwargs:
+        """
         if catalog_dir is None:
             catalog_dir = CATALOG
+        self.catalog_dir = catalog_dir
         self.pixel = pixel
         kwargs['version'] = kwargs.get('version', '_cat')
         kwargs['ext'] = kwargs.get('ext', '.fits')
