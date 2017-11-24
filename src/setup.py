@@ -10,7 +10,9 @@ dependencies = ['requests >= 2.7',
                 'Polygon2',
                 'scipy',
                 'mp_ephem',
-                'ginga']
+                'ginga',
+                'scikitlearn',
+                ]
 
 
 if sys.version_info[0] > 2:
@@ -21,6 +23,7 @@ console_scripts = ['daomop_populate = daomop.populate:main',
                    'daomop_link = daomop.CFIS_Link_stacked:main',
                    'daomop_validate = daomop.web_validate:main',
                    'daomop_stationary = daomop.stationary:main',
+                   'daomop_nonstationary = daomop.ns_cfis:main',
                    'daomop_cat = daomop.build_cat:main',
                    'daomop_canfar_job = daomop.canfar_job:main',
                    'hpx_map = daomop.hpx_map:main']
