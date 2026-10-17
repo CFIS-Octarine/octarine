@@ -9,7 +9,6 @@ import tempfile
 import Polygon
 import numpy
 import requests
-import time
 from astropy.coordinates import SkyCoord
 from astropy import units
 from astropy.table import Table
@@ -163,8 +162,10 @@ class Task(object):
             return self.dependency.finished
 
 
-def get_exposure_table(start_date=None, end_date=None, runids=['17BC99']):
+def get_exposure_table(start_date=None, end_date=None, runids=None):
 
+    if runids is None:
+        runids = ['17BP99']
     query = """SELECT Observation.observationID AS "observationID", """
     query += """ COORD1(CENTROID(Plane.position_bounds)) AS RA, """
     query += """ COORD2(CENTROID(Plane.position_bounds)) AS DE """
@@ -172,7 +173,7 @@ def get_exposure_table(start_date=None, end_date=None, runids=['17BC99']):
     query += """WHERE   Plane.calibrationLevel = '1' AND Plane.energy_bandpassName IN ( 'r.MP9602','r.MP9601' ) """
     query += """AND Observation.instrument_name = 'MegaPrime' """
     query += """AND Observation.collection = 'CFHT' """
-    query += """AND Observation.proposal_id IN ({})""".format(",".join([ "'{}'".format(x) for x in runids]))
+    query += """AND Observation.proposal_id IN ({})""".format(",".join(["'{}'".format(x) for x in runids]))
     query += """AND  ( Plane.quality_flag IS NULL OR Plane.quality_flag != 'junk' ) """
     print query
 
@@ -333,12 +334,12 @@ class Artifact(object):
     def __init__(self, observation, version=PROCESSED_VERSION,
                  ccd=None, subdir=None, ext=IMAGE_EXT, prefix=None, dest_directory=None):
         """
-        :type version: str
+        :type version: str, None
         :type observation: Observation
-        :type ccd: int
-        :type subdir: str
-        :type ext: str
-        :type prefix: str
+        :type ccd: int, None
+        :type subdir: str, None
+        :type ext: str, None
+        :type prefix: str, None
         :rtype: Artifact
         """
         self.observation = observation
@@ -864,6 +865,27 @@ class FitsImage(FitsArtifact):
         ra_dec = "({},{},{})".format(skycoord.ra.deg, skycoord.dec.deg, radius.to('degree').value)
 
         return self.cutout(cutout=ra_dec, return_file=return_file, trim_to_datasec=trim_to_datasec)
+
+
+class Catalog(Artifact):
+
+    def __init__(self, dataset_name, catalog_dir=None, **kwargs):
+        """
+
+        :param dataset_name: dataset_name
+        :param nside: nsides to use in computing RA/DEC healpix translation
+        :param catalog_dir: dbimages sub-directory containting the catalogs
+        :param kwargs:
+        """
+        if catalog_dir is None:
+            catalog_dir = CATALOG
+        self.catalog_dir = catalog_dir
+        self.dataset_name = dataset_name
+        kwargs['version'] = ""
+        kwargs['ext'] = ""
+        kwargs['subdir'] = ""
+        dbimages = os.path.join(os.path.dirname(DBIMAGES), catalog_dir)
+        super(Catalog, self).__init__(Observation(self.dataset_name, dbimages=dbimages), **kwargs)
 
 
 class HPXCatalog(FitsTable):
@@ -1440,8 +1462,10 @@ def list_exposures(proposal_title='cfis'):
     return tap_query(query)
 
 
-def list_healpix(start_date=None, end_date=None, runids=['17BC99']):
+def list_healpix(start_date=None, end_date=None, runids=None):
 
+    if runids is None:
+        runids = ['17BC99']
     exposure_table = get_exposure_table(start_date=start_date, end_date=end_date, runids=runids)
     print exposure_table
     skycoords = SkyCoord(exposure_table['RA']*units.degree,

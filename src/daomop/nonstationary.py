@@ -18,7 +18,7 @@ class fits_cat(object):
         # Remove rows with infinite values from the table.
         self.array = self.feature(self.catalog)
         self.catalog = self.catalog[sum(isfinite(self.array), axis=1) == self.array.shape[1]]
-        
+
         self.stationary0 = self.catalog[self.catalog['MATCHES'] > 0]
         self.stationary1 = self.catalog[self.catalog['MATCHES'] > 1]
         self.stationary2 = self.catalog[self.catalog['MATCHES'] > 2]

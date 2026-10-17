@@ -11,7 +11,7 @@ dependencies = ['requests >= 2.7',
                 'scipy',
                 'mp_ephem',
                 'ginga',
-                'scikitlearn',
+                'sklearn',
                 ]
 
 
@@ -20,10 +20,10 @@ if sys.version_info[0] > 2:
     sys.exit(-1)
 
 console_scripts = ['daomop_populate = daomop.populate:main',
-                   'daomop_link = daomop.CFIS_Link_stacked:main',
+                   'daomop_find_tracklets = daomop.find_tracklets:main',
                    'daomop_validate = daomop.web_validate:main',
                    'daomop_stationary = daomop.stationary:main',
-                   'daomop_nonstationary = daomop.ns_cfis:main',
+                   'daomop_nonstationary = daomop.nonstationary:main',
                    'daomop_cat = daomop.build_cat:main',
                    'daomop_canfar_job = daomop.canfar_job:main',
                    'hpx_map = daomop.hpx_map:main']
