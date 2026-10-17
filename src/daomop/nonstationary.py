@@ -1,6 +1,5 @@
 import argparse
 import logging
-
 from matplotlib import pyplot as plt
 from numpy import *
 from daomop import storage
@@ -10,10 +9,16 @@ from daomop import util
 import sys
 import os
 import pickle
+DATADIR = __PATH__ = os.path.join(os.path.dirname(__file__), 'data')
 
-class fits_cat:
+class fits_cat(object):
     def __init__(self, hpx_catalog):
         self.catalog = hpx_catalog.table
+
+        # Remove rows with infinite values from the table.
+        self.array = self.feature(self.catalog)
+        self.catalog = self.catalog[sum(isfinite(self.array), axis=1) == self.array.shape[1]]
+        
         self.stationary0 = self.catalog[self.catalog['MATCHES'] > 0]
         self.stationary1 = self.catalog[self.catalog['MATCHES'] > 1]
         self.stationary2 = self.catalog[self.catalog['MATCHES'] > 2]
@@ -55,7 +60,7 @@ class fits_cat:
                       cat['ERRTHETAPSF_SKY']]).T
 
 
-class IF_real_bogus:
+class IF_real_bogus(object):
     def __init__(self, feature):
         self.feature = feature
 
@@ -79,17 +84,21 @@ class IF_real_bogus:
                                                                                  len(self.feature)))
 
 
-def build_model(hpx_catalog, model_pickle_file="non_stationary_model.pkl"):
-    if not os.access(model_pickle_file, os.R_OK):
-        logging.info("Building stationary source model based on stationary sources in {}".format(hpx_catalog.filename))
-        sources = fits_cat(hpx_catalog)
-        # print len(sources.stationary2), len(sources.ns1)
-        real_bogus = IF_real_bogus(sources.real_feature)
-        real_bogus.train()
-        real_bogus.validation()
-        with open(model_pickle_file, 'w') as fobj:
-            pickle.dump(real_bogus.IFmod, fobj)
-    return pickle.load(open(model_pickle_file, 'r'))
+def build_model(hpx_catalog):
+    """
+    Build a model of stellar sources to be used to select only stellar sources from the input catlogs.
+    :param hpx_catalog:  The healpix catalog to use as the source of stellar profiles.
+    :type hpx_catalog: storage.HPXCatalog
+    :return: Model to be used for star galaxy separation.
+    :rtype: IF_real_bogus.IFmod
+    """
+
+    logging.info("Building stationary source model based on stationary sources in {}".format(hpx_catalog.filename))
+    sources = fits_cat(hpx_catalog)
+    real_bogus = IF_real_bogus(sources.real_feature)
+    real_bogus.train()
+    real_bogus.validation()
+    return real_bogus.IFmod
 
 
 def remove_ps1_source(ps1_cat, ns_cat):
@@ -172,7 +181,6 @@ def main():
 
     cmd_line = " ".join(sys.argv)
     args = parser.parse_args()
-
     util.set_logger(args)
     logging.info("Started {}".format(cmd_line))
 
@@ -181,8 +189,20 @@ def main():
     catalog_dirname = "{}/{}".format(args.catalogs, args.qrunid)
 
     training_catalog = storage.HPXCatalog(pixel=args.training_hpx, catalog_dir=catalog_dirname)
+    stellar_model = storage.HPXCatalog(pixel=args.training_hpx, catalog_dir=catalog_dirname,
+                                       ext=".pkl", version="_IFmod")
+    # Get or build a model of the stellar profile.
+    try:
+        stellar_model.get()
+        with open(stellar_model.filename, 'r') as fobj:
+            rb_model = pickle.load(fobj)
+    except Exception as ex:
+        logging.warning(str(ex))
+        rb_model = build_model(training_catalog)
+        with open(stellar_model.filename, 'w') as fobj:
+            pickle.dump(rb_model, fobj)
+        stellar_model.put()
 
-    rb_model = build_model(training_catalog)
     ps1_catalog = storage.HPXCatalog(pixel=args.healpix, catalog_dir=args.ps1_dir, version="_STK")
     search_catalog = storage.HPXCatalog(pixel=args.healpix, catalog_dir=catalog_dirname)
     ns_cat(search_catalog, ps1_catalog, rb_model)
